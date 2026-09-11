@@ -24,6 +24,10 @@ mm config set experimentalAllowUnverifiedInstalls false
 
 Public resources must use HTTPS. HTTP is accepted for loopback and private-LAN development resources.
 
+## Integration findings
+
+Findings discovered while testing the plugin with Agent Wallet are documented in [`findings/`](./findings/).
+
 ## Develop
 
 ```sh
