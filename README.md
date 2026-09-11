@@ -11,7 +11,7 @@ Requires MetaMask Agent Wallet 6.2 or later.
 ```sh
 mm config set experimentalPlugins true
 mm config set experimentalAllowUnverifiedInstalls true
-mm plugins install "file:$PWD/agent-wallet-shodai-subscription-0.1.0.tgz" --accept-permissions
+mm plugins install agent-wallet-shodai-subscription --accept-permissions
 mm config set experimentalAllowUnverifiedInstalls false
 ```
 

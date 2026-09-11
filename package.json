@@ -8,6 +8,7 @@
   },
   "files": [
     "dist",
+    "findings",
     "oclif.manifest.json"
   ],
   "scripts": {
