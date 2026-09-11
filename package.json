@@ -1,0 +1,75 @@
+{
+  "name": "agent-wallet-shodai-subscription",
+  "version": "0.1.0",
+  "description": "Delegated subscription commands for MetaMask Agent Wallet",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "files": [
+    "dist",
+    "oclif.manifest.json"
+  ],
+  "scripts": {
+    "test": "tsx --test test/*.test.ts",
+    "build": "rm -rf dist && tsc && oclif manifest",
+    "prepack": "npm run build"
+  },
+  "oclif": {
+    "bin": "mm",
+    "commands": "./dist/commands",
+    "topicSeparator": " "
+  },
+  "mm": {
+    "schemaVersion": 1,
+    "minCliVersion": "^6.2.0",
+    "capabilities": [],
+    "commands": [
+      {
+        "id": "shodai:status",
+        "capabilities": ["wallet-read"],
+        "dataAccess": ["accounts", "network"],
+        "targetChains": [84532]
+      },
+      {
+        "id": "shodai:subscribe",
+        "capabilities": ["wallet-read", "wallet-submit"],
+        "dataAccess": ["accounts", "network"],
+        "targetChains": [84532]
+      },
+      {
+        "id": "shodai:access",
+        "capabilities": ["wallet-read", "wallet-submit"],
+        "dataAccess": ["accounts", "network"],
+        "targetChains": [84532]
+      },
+      {
+        "id": "shodai:cancel",
+        "capabilities": ["wallet-read", "wallet-submit"],
+        "dataAccess": ["accounts", "network"],
+        "targetChains": [84532]
+      }
+    ]
+  },
+  "peerDependencies": {
+    "@metamask/agent-wallet": "^6.2.0"
+  },
+  "dependencies": {
+    "@metamask/delegation-core": "^1.0.0",
+    "@metamask/smart-accounts-kit": "2.0.0",
+    "@oclif/core": "^4.11.4",
+    "@x402/core": "2.23.0",
+    "@x402/extensions": "2.23.0",
+    "js-yaml": "^4.3.2",
+    "viem": "2.37.3"
+  },
+  "devDependencies": {
+    "@metamask/agent-sdk": "^6.2.0",
+    "@metamask/agent-wallet": "6.2.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "24.3.0",
+    "oclif": "^4.23.14",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2"
+  }
+}

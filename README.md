@@ -1,0 +1,34 @@
+# Agent Wallet Shodai subscription plugin
+
+MetaMask Agent Wallet commands for resources that advertise the `shodai-subscription` x402 scheme on Base Sepolia.
+
+The plugin discovers merchant, plan, pricing, setup, status, Agreement, and adapter details from the resource and its protocol responses. It has no fixed merchant or server URL.
+
+## Install
+
+Requires MetaMask Agent Wallet 6.2 or later.
+
+```sh
+mm config set experimentalPlugins true
+mm config set experimentalAllowUnverifiedInstalls true
+mm plugins install "file:$PWD/agent-wallet-shodai-subscription-0.1.0.tgz" --accept-permissions
+mm config set experimentalAllowUnverifiedInstalls false
+```
+
+## Commands
+
+- `mm shodai subscribe <resource-url>` subscribes and returns protected content.
+- `mm shodai access <resource-url>` authenticates with SIWx and retrieves content.
+- `mm shodai status <resource-url>` reads subscription and renewal status without signing.
+- `mm shodai cancel <agreement-address>` disables future renewal.
+
+Public resources must use HTTPS. HTTP is accepted for loopback and private-LAN development resources.
+
+## Develop
+
+```sh
+npm ci
+npm test
+npm run build
+npm pack
+```
