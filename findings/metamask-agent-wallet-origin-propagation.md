@@ -72,7 +72,9 @@ behavior with the missing-origin path.
 - A diagnostic patch added origin to the message request and forwarded it
   through both waiting and non-waiting server-wallet signing paths. With the
   actual HTTPS resource origin supplied, two consecutive access signatures
-  completed without email approval.
+  completed without email approval. The
+  [normalized change trace](./evidence/origin-propagation-6.2.0.md) shows each
+  origin-specific hop without the generated bundle noise.
 - The diagnostic patch is not shipped with this plugin. It remains available in
   the source experiment's Git history at commit `1396184`, path
   `experiments/delegator-subscription/patches/host/@metamask+agent-wallet+6.2.0.patch`.
