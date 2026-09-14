@@ -11,7 +11,7 @@ Requires MetaMask Agent Wallet 6.2 or later.
 ```sh
 mm config set experimentalPlugins true
 mm config set experimentalAllowUnverifiedInstalls true
-mm plugins install agent-wallet-shodai-subscription --accept-permissions
+mm plugins install velvet-anvil --accept-permissions
 mm config set experimentalAllowUnverifiedInstalls false
 ```
 
