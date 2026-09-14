@@ -1,4 +1,4 @@
-# Agent Wallet Shodai subscription plugin
+# Shodai Subscriptions Agent Wallet plugin
 
 MetaMask Agent Wallet commands for resources that advertise the `shodai-subscription` x402 scheme on Base Sepolia.
 
