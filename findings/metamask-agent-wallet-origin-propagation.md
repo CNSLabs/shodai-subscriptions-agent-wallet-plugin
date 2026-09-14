@@ -1,23 +1,56 @@
-# Agent Wallet origin propagation
+# Plugin message signing cannot propagate the resource origin
 
-## Summary
+## Impact
 
-With stock MetaMask Agent Wallet 6.2.0, a plugin-initiated SIWx signature cannot identify the merchant origin to Agent Wallet's signing policy. As a result, accessing subscription content can require email approval for every signature, even after the user has approved that merchant.
+The Agent Wallet plugin API can request an EVM message signature, but it cannot
+identify the HTTP origin whose SIWx challenge is being signed. In the tested
+server-wallet flow, stock Agent Wallet 6.2.0 required email approval for each
+access signature, including repeated access to the same stable HTTPS resource.
 
-This is separate from the "Malicious signature" warning shown for an HTTP resource. HTTPS removes that transport-related warning but does not supply the missing origin at the plugin signing boundary.
+Propagating the resource origin through a diagnostic Agent Wallet patch changed
+that observed behavior: two consecutive access signatures completed without
+email approval. This establishes that origin propagation affected the signing
+decision in this flow. It does not establish the complete rule used by
+MetaMask's remote signing or risk service, whose implementation is not present
+in this repository.
 
-## Affected flow
+## Existing origin path
 
-1. [`src/access.ts`](./src/access.ts) obtains the merchant's SIWx challenge, validates its domain against the resource URL, and asks the wallet to sign it.
-2. [`src/wallet.ts`](./src/wallet.ts) submits the supported Agent Wallet executor request with `kind: "message"`, the chain ID, message, and intent.
-3. That request surface has no field for the validated merchant origin, so the host cannot associate the signature with the merchant for origin-based trust decisions.
-4. MetaMask consequently requests out-of-band approval again on later content access.
+Origin is already a concept below the plugin boundary:
 
-The plugin cannot correctly repair this itself. Encoding the origin in intent text or asking the host to infer it from arbitrary signed-message content would not provide a trustworthy origin.
+- Agent Wallet's downstream EVM signing context includes an `origin` field.
+- Agent Wallet 6.2.0 and 6.2.1 populate that field with the constant
+  `"metamask"` for plugin-initiated message signatures.
+- The underlying message-controller request type defines optional `origin` as
+  the requesting domain.
+
+The missing hop is the public plugin request and its forwarding path. The
+plugin-facing `EvmSignMessageInput` request supports the chain ID, message,
+intent, and execution options, but no origin. `FoxWalletService.signEvmMessage`
+therefore calls the waiting and non-waiting signing methods without one, while
+the downstream EVM client's `signatureCtx` supplies the constant origin.
+Consequently, a plugin cannot pass the resource origin into the existing
+downstream signing context.
+
+## Integration behavior
+
+This plugin does know and validate the relevant origin before signing:
+
+1. [`src/access.ts`](../src/access.ts) receives the merchant's SIWx challenge.
+2. The x402 SIWx implementation requires the challenge domain to equal the
+   response URL host and the challenge URI origin to equal the response URL
+   origin before it invokes the signer.
+3. [`src/wallet.ts`](../src/wallet.ts) submits the supported Agent Wallet
+   message-signing request. That request has no field for the validated origin.
+
+The plugin should not encode origin in intent prose or expect Agent Wallet to
+infer it from arbitrary signed-message text. Neither supplies structured trust
+context at the host boundary.
 
 ## Reproduction
 
-Use an unmodified Agent Wallet 6.2.0 installation in server-wallet mode with this plugin installed and a stable HTTPS merchant resource:
+Use an unmodified Agent Wallet 6.2.0 server wallet, this plugin, and a stable
+HTTPS merchant resource:
 
 ```sh
 mm shodai subscribe <resource-url>
@@ -25,25 +58,50 @@ mm shodai access <resource-url>
 mm shodai access <resource-url>
 ```
 
-On the affected host, the repeated access signatures require email approval rather than reusing the user's trust decision for that origin.
-
-For a clean reproduction of this issue, use HTTPS. Testing against private-LAN HTTP additionally triggers MetaMask's transport-related signature warning and conflates two independent behaviors.
-
-## Expected behavior
-
-After a user approves the merchant origin under their configured policy, subsequent SIWx signatures for that same origin can be evaluated against that trust decision. The signed SIWx message and its domain validation remain unchanged.
-
-## Requested Agent Wallet change
-
-1. Allow a plugin message-signing request to include its authenticated HTTP or HTTPS origin.
-2. Canonicalize and validate that origin in the Agent Wallet host rather than trusting arbitrary plugin text.
-3. Forward the validated origin through every server-wallet message-signing path, including waiting and non-waiting submissions, so signing policy evaluates the actual merchant origin.
-4. Preserve current behavior when no origin is supplied.
-
-This does not require parsing an origin from the signed message or granting plugins authority to assert arbitrary trust context.
+In the observed run, each access signature required email approval. HTTPS is
+important to this reproduction: a private-LAN HTTP resource separately triggers
+MetaMask's malicious-signature warning, which would conflate transport-risk
+behavior with the missing-origin path.
 
 ## Evidence
 
-- A split-machine acceptance run using stock Agent Wallet 6.2.0 required email approval again on repeated access.
-- A prior diagnostic host patch propagated the validated HTTPS origin through the same signing path; two consecutive access signatures then completed without email approval.
-- That diagnostic patch is intentionally not part of this plugin because shipping a private Agent Wallet modification would hide the stock-client experience. Its implementation remains available in the source experiment's Git history at commit `1396184`, path `experiments/delegator-subscription/patches/host/@metamask+agent-wallet+6.2.0.patch`.
+- The stock 6.2.0 acceptance run required repeated email approval for access to
+  the same HTTPS resource.
+- Inspection of the 6.2.0 and 6.2.1 plugin request types and runtime forwarding
+  path found no plugin-supplied origin and a constant downstream origin.
+- A diagnostic patch added origin to the message request and forwarded it
+  through both waiting and non-waiting server-wallet signing paths. With the
+  actual HTTPS resource origin supplied, two consecutive access signatures
+  completed without email approval.
+- The diagnostic patch is not shipped with this plugin. It remains available in
+  the source experiment's Git history at commit `1396184`, path
+  `experiments/delegator-subscription/patches/host/@metamask+agent-wallet+6.2.0.patch`.
+
+## Required product decision
+
+Agent Wallet needs a supported way to preserve the requesting origin for
+plugin-initiated SIWx signing. Two technically coherent boundaries are:
+
+- accept a canonical origin as structured message-signing context from an
+  installed plugin; or
+- accept a structured SIWx request and validate its domain and URI in the host.
+
+The first is the smallest API change but treats the installed plugin as the
+source of the origin assertion. The second gives the host enough structure to
+validate the assertion but adds SIWx-specific responsibility to Agent Wallet.
+That trust-boundary choice belongs to Agent Wallet; this integration should not
+simulate it with intent text.
+
+## Expected behavior
+
+The actual resource origin should reach Agent Wallet's existing signing context
+and be evaluated under MetaMask's existing approval and risk controls. Supplying
+an origin must not itself grant approval, suppress MFA, or bypass message-risk
+evaluation. Waiting and non-waiting message-signing paths should preserve the
+same context.
+
+## Separate HTTP behavior
+
+This finding is independent of the malicious-signature warning observed for a
+private-LAN HTTP resource. HTTPS removes that transport-related warning; it does
+not add an origin field to the plugin signing request.

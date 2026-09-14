@@ -10,10 +10,13 @@ Requires MetaMask Agent Wallet 6.2 or later.
 
 ```sh
 mm config set experimentalPlugins true
-mm config set experimentalAllowUnverifiedInstalls true
 mm plugins install velvet-anvil --accept-permissions
-mm config set experimentalAllowUnverifiedInstalls false
 ```
+
+Agent Wallet 6.2.0 and 6.2.1 currently roll back this npm installation because
+of a host-side post-install defect. See the
+[verified finding](./findings/metamask-agent-wallet-plugin-install-rollback.md)
+before testing distribution through a stock client.
 
 ## Commands
 
@@ -26,7 +29,8 @@ Public resources must use HTTPS. HTTP is accepted for loopback and private-LAN d
 
 ## Integration findings
 
-Findings discovered while testing the plugin with Agent Wallet are documented in [`findings/`](./findings/).
+Findings discovered while testing the plugin with Agent Wallet are indexed in
+[`findings/README.md`](./findings/README.md).
 
 ## Develop
 
