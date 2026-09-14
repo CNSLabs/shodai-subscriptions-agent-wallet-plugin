@@ -40,8 +40,9 @@ Public resources must use HTTPS. HTTP is accepted for loopback and private-LAN d
 
 ## Integration findings
 
-Repository-only integration findings are maintained under `findings/` and are
-intentionally excluded from the npm package.
+Repository-only integration findings are maintained in the public
+[`findings/` directory](https://github.com/CNSLabs/shodai-subscriptions-agent-wallet-plugin/tree/main/findings)
+and are intentionally excluded from the npm package.
 
 ## Develop
 

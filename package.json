@@ -1,7 +1,12 @@
 {
   "name": "velvet-anvil",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Delegated subscription commands for MetaMask Agent Wallet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CNSLabs/shodai-subscriptions-agent-wallet-plugin.git"
+  },
+  "homepage": "https://github.com/CNSLabs/shodai-subscriptions-agent-wallet-plugin#readme",
   "type": "module",
   "engines": {
     "node": ">=22.18"
