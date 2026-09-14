@@ -14,9 +14,20 @@ mm plugins install velvet-anvil --accept-permissions
 ```
 
 Agent Wallet 6.2.0 and 6.2.1 currently roll back this npm installation because
-of a host-side post-install defect. See the
-[verified finding](./findings/metamask-agent-wallet-plugin-install-rollback.md)
-before testing distribution through a stock client.
+of a host-side post-install defect. To evaluate the plugin from this checkout
+without modifying Agent Wallet:
+
+```sh
+npm ci
+tarball="$(npm pack --silent | tail -n 1)"
+mm config set experimentalPlugins true
+mm config set experimentalAllowUnverifiedInstalls true
+mm plugins install "file:$PWD/$tarball" --accept-permissions
+mm config set experimentalAllowUnverifiedInstalls false
+```
+
+The `file:` prefix is required for Agent Wallet to treat the tarball as a local
+plugin source. This path was verified with stock Agent Wallet 6.2.1.
 
 ## Commands
 
@@ -29,8 +40,8 @@ Public resources must use HTTPS. HTTP is accepted for loopback and private-LAN d
 
 ## Integration findings
 
-Findings discovered while testing the plugin with Agent Wallet are indexed in
-[`findings/README.md`](./findings/README.md).
+Repository-only integration findings are maintained under `findings/` and are
+intentionally excluded from the npm package.
 
 ## Develop
 

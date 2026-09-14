@@ -1,4 +1,5 @@
 node_modules/
 dist/
 *.tgz
+*.tgz
 oclif.manifest.json
