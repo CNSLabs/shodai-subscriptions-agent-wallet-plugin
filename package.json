@@ -1,6 +1,6 @@
 {
   "name": "velvet-anvil",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Delegated subscription commands for MetaMask Agent Wallet",
   "repository": {
     "type": "git",
@@ -27,7 +27,7 @@
   },
   "mm": {
     "schemaVersion": 1,
-    "minCliVersion": "^6.2.0",
+    "minCliVersion": ">=6.2.0 <8",
     "capabilities": [],
     "commands": [
       {
@@ -57,7 +57,7 @@
     ]
   },
   "peerDependencies": {
-    "@metamask/agent-wallet": "^6.2.0"
+    "@metamask/agent-wallet": ">=6.2.0 <8"
   },
   "dependencies": {
     "@metamask/delegation-core": "^1.0.0",
@@ -69,8 +69,8 @@
     "viem": "2.37.3"
   },
   "devDependencies": {
-    "@metamask/agent-sdk": "^6.2.0",
-    "@metamask/agent-wallet": "6.2.0",
+    "@metamask/agent-sdk": "7.0.0",
+    "@metamask/agent-wallet": "7.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "24.3.0",
     "oclif": "^4.23.14",

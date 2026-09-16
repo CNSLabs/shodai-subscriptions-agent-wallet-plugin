@@ -7,6 +7,7 @@ import { CHAIN_ID, subscriptionWallet } from "../../wallet.js";
 export default class Cancel extends PluginCommand<object> {
   protected readonly pluginCommandId = "shodai:cancel";
   static usage = "mm shodai cancel <agreement-address>";
+  static summary = "mm shodai cancel <agreement-address> - disable future renewals";
   static description = "Cancel future subscription renewals; existing paid access remains until expiry";
   static args = { "agreement-address": Args.string({ required: true }) };
   static flags = { ...PluginCommand.baseFlags };

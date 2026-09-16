@@ -14,6 +14,7 @@ import { ensureAgreementTrust } from "../../trust.js";
 export default class Subscribe extends PluginCommand<object> {
   protected readonly pluginCommandId = "shodai:subscribe";
   static usage = "mm shodai subscribe <resource-url>";
+  static summary = "mm shodai subscribe <resource-url> - subscribe and return protected content";
   static description = "Subscribe to an x402 shodai-subscription resource with the selected Agent Wallet. Creates a bounded recurring-payment permission, establishes Agreement trust, and returns the protected content.";
   static args = { "resource-url": Args.string({ required: true }) };
   static flags = { ...PluginCommand.baseFlags };

@@ -6,6 +6,7 @@ import { resourceUrl, subscriptionWallet } from "../../wallet.js";
 export default class Access extends PluginCommand<{ status: number; content: string }> {
   protected readonly pluginCommandId = "shodai:access";
   static usage = "mm shodai access <resource-url>";
+  static summary = "mm shodai access <resource-url> - authenticate and retrieve protected content";
   static description = "Read an existing Shodai subscription resource using Agent Wallet authentication";
   static args = { "resource-url": Args.string({ required: true }) };
   static flags = { ...PluginCommand.baseFlags };

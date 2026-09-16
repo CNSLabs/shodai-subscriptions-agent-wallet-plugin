@@ -8,6 +8,7 @@ import { resourceUrl, selectedAddress } from "../../wallet.js";
 export default class Status extends PluginCommand<SubscriptionStatus> {
   protected readonly pluginCommandId = "shodai:status";
   static usage = "mm shodai status <resource-url>";
+  static summary = "mm shodai status <resource-url> - read subscription and renewal status";
   static description = "Read renewal, paid access, and latest merchant collection status without signing or paying";
   static args = { "resource-url": Args.string({ required: true }) };
   static flags = { ...PluginCommand.baseFlags };

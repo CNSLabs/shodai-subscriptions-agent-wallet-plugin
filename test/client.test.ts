@@ -11,6 +11,8 @@ import { accessResource } from "../src/access.js";
 import { AgentWalletSubscriptionClient } from "../src/subscription-client.js";
 import type { SubscriptionRecord } from "../src/protocol.js";
 import { ensureAgreementTrust, policyCli } from "../src/trust.js";
+import Access from "../src/commands/shodai/access.js";
+import Cancel from "../src/commands/shodai/cancel.js";
 import Subscribe from "../src/commands/shodai/subscribe.js";
 import Status from "../src/commands/shodai/status.js";
 
@@ -23,6 +25,13 @@ const io = { notify: () => {}, emit: () => {} } as any;
 test("subscribe help describes the direct Agent Wallet journey", () => {
   assert.match(Subscribe.description, /selected Agent Wallet/);
   assert.match(Subscribe.description, /bounded recurring-payment permission/);
+});
+
+test("topic summaries show every required positional argument", () => {
+  assert.match(Subscribe.summary, /subscribe <resource-url>/);
+  assert.match(Access.summary, /access <resource-url>/);
+  assert.match(Status.summary, /status <resource-url>/);
+  assert.match(Cancel.summary, /cancel <agreement-address>/);
 });
 
 test("setup trust adds only the Agreement and preserves the existing policy", async t => {

@@ -13,9 +13,9 @@ mm config set experimentalPlugins true
 mm plugins install velvet-anvil --accept-permissions
 ```
 
-Agent Wallet 6.2.0 and 6.2.1 currently roll back this npm installation because
-of a host-side post-install defect. To evaluate the plugin from this checkout
-without modifying Agent Wallet:
+Agent Wallet 6.2.0 and 6.2.1 have a host-side post-install defect that rolls
+back npm plugin installation. When evaluating with either affected version,
+install a local tarball from this checkout:
 
 ```sh
 npm ci
