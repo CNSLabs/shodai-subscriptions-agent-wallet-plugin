@@ -1,5 +1,5 @@
 import type { CommandIO, PluginCommandContext } from "@metamask/agent-wallet/plugin";
-import { getAddress, type Address, type Hex } from "viem";
+import { getAddress, isAddressEqual, recoverMessageAddress, recoverTypedDataAddress, type Address, type Hex } from "viem";
 import type { SubscriptionWallet } from "./subscription-client.js";
 
 export const CHAIN_ID = 84532;
@@ -21,26 +21,38 @@ export async function subscriptionWallet(ctx: PluginCommandContext, io: CommandI
   const address = selectedAddress(ctx);
   const execute = await ctx.walletExecutor(io, source, { emitStepNotices: true });
   const options = { signal: io.signal, waitForReceipt: true };
+  const assertSelected = () => {
+    if (!isAddressEqual(selectedAddress(ctx), address)) throw new Error(`Selected wallet changed during subscription; reselect ${address} and retry`);
+  };
   const signer: SubscriptionWallet = {
     getAddress: async () => address,
+    signMessage: async (message: string) => {
+      assertSelected();
+      const result = await execute({ kind: "message", chainId: CHAIN_ID, message, intent: { action: "custom", summary: "Authenticate subscription resource access" } }, options);
+      if (result.kind !== "signature" || !result.signature) throw new Error(result.failureDescription ?? `Signing ended with ${result.status}`);
+      if (!isAddressEqual(await recoverMessageAddress({ message, signature: result.signature as Hex }), address)) {
+        throw new Error(`Wallet proof was signed by a different wallet; reselect ${address} and retry`);
+      }
+      return result.signature as Hex;
+    },
     signTypedData: async ({ chainId, domain, types, primaryType, message, intent }) => {
+      assertSelected();
       io.emit(intent);
       const result = await execute({ kind: "typed-data", chainId, intent: { action: "custom", summary: intent },
         typedData: JSON.parse(JSON.stringify({ domain, types, primaryType, message }, bigintJson)),
       }, options);
       if (result.kind !== "signature" || !result.signature) throw new Error(result.failureDescription ?? `Signing ended with ${result.status}; job ${result.pendingJob?.pollingId ?? "unknown"}`);
+      if (!isAddressEqual(await recoverTypedDataAddress({ domain, types, primaryType, message, signature: result.signature as Hex } as Parameters<typeof recoverTypedDataAddress>[0]), address)) {
+        throw new Error(`Subscription authority was signed by a different wallet; reselect ${address} and retry`);
+      }
       return result.signature as Hex;
     },
   };
   return {
     ...signer,
     address,
-    signMessage: async (message: string) => {
-      const result = await execute({ kind: "message", chainId: CHAIN_ID, message, intent: { action: "custom", summary: "Authenticate subscription resource access" } }, options);
-      if (result.kind !== "signature" || !result.signature) throw new Error(result.failureDescription ?? `Signing ended with ${result.status}`);
-      return result.signature as Hex;
-    },
     send: async (to: Address, data: Hex, summary: string, call: { function: string; arguments: Record<string, unknown> }) => {
+      assertSelected();
       io.emit(`${summary}: ${JSON.stringify({ target: to, ...call }, bigintJson)}`);
       const result = await execute({ kind: "transaction", chainId: CHAIN_ID, transaction: { to, data, value: 0n }, intent: { action: "call", summary } }, options);
       if (result.kind !== "transaction" || !result.hash) throw new Error(result.failureDescription ?? `Transaction ended with ${result.status}; job ${result.pendingJob?.pollingId ?? "unknown"}`);

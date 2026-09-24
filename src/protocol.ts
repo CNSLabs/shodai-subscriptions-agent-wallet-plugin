@@ -2,6 +2,7 @@ import type { Address, Hex } from "viem";
 
 export const SUBSCRIPTION_SCHEME = "shodai-subscription";
 export const SUBSCRIPTION_VERSION = "1";
+export const NATIVE_ETH_ASSET = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 export type SubscriptionExtra = {
   version: string;
@@ -10,6 +11,7 @@ export type SubscriptionExtra = {
   statusEndpoint?: string;
   token: { symbol: string; decimals: number; formattedAmount: string };
   agentWalletSetup?: { endpoint: string };
+  challengeEndpoint?: string;
   cancellationPolicy: string;
   assetTransferMethod?: string;
   paymentFlow?: string;

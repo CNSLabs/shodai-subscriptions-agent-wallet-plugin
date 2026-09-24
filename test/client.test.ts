@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import { encodePaymentRequiredHeader } from "@x402/core/http";
-import { decodeAllowedCalldataTerms, decodeDelegations, decodeERC20TokenPeriodTransferTerms, decodeRedeemerTerms, decodeTimestampTerms } from "@metamask/delegation-core";
+import { decodeAllowedTargetsTerms, decodeDelegations, decodeNativeTokenPeriodTransferTerms, decodeRedeemerTerms, decodeTimestampTerms } from "@metamask/delegation-core";
 import { getSmartAccountsEnvironment } from "@metamask/smart-accounts-kit";
 import { isAddressEqual, keccak256, toBytes } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { resourceUrl, subscriptionWallet } from "../src/wallet.js";
 import { accessResource } from "../src/access.js";
 import { AgentWalletSubscriptionClient } from "../src/subscription-client.js";
+import { NATIVE_ETH_ASSET } from "../src/protocol.js";
+import { requestInit, resourceRequest } from "../src/request.js";
 import type { SubscriptionRecord } from "../src/protocol.js";
 import { ensureAgreementTrust, policyCli } from "../src/trust.js";
 import Access from "../src/commands/shodai/access.js";
@@ -52,39 +54,57 @@ test("setup trust adds only the Agreement and preserves the existing policy", as
   assert.equal(writes, 1);
 });
 
-test("message uses the stock executor API; mismatched SIWx fails before signing", async t => {
+test("message uses the stock executor API; cross-origin wallet challenge fails before signing", async t => {
   const origin = "https://subscription.example";
-  const ctx = { walletStateManager: { read: () => ({ selectedWallet: { namespace: "evm", mode: "server", ref: { address } }, remoteWallets: [{ address }] }) },
+  const signer = privateKeyToAccount(generatePrivateKey());
+  const ctx = { walletStateManager: { read: () => ({ selectedWallet: { namespace: "evm", mode: "server", ref: { address: signer.address } }, remoteWallets: [{ address: signer.address }] }) },
     walletExecutor: async () => async (request: any) => {
       assert.deepEqual(request, { kind: "message", chainId: 84532, message: "message",
         intent: { action: "custom", summary: "Authenticate subscription resource access" } });
-      return { kind: "signature", signature: "0xab" };
+      return { kind: "signature", signature: await signer.signMessage({ message: request.message }) };
     } };
   const wallet = await subscriptionWallet(ctx as any, io, "test");
-  assert.equal(await wallet.signMessage("message"), "0xab");
+  assert.ok((await wallet.signMessage("message")).startsWith("0x"));
   let signed = false;
-  const offer = { x402Version: 2, resource: { url: `${origin}/subscriber-resource` }, accepts: [], extensions: {
-    "sign-in-with-x": { info: { domain: "other.example", uri: "https://other.example/subscriber-resource", version: "1", nonce: "12345678", issuedAt: new Date().toISOString() },
-      supportedChains: [{ chainId: "eip155:84532", type: "eip191" }] } } };
+  const offer = { x402Version: 2, resource: { url: `${origin}/subscriber-resource` }, accepts: [{
+    scheme: "shodai-subscription", network: "eip155:84532", asset: NATIVE_ETH_ASSET, amount: "1", payTo: address,
+    extra: { challengeEndpoint: "https://other.example/challenge" },
+  }] };
   t.mock.method(globalThis, "fetch", async () => new Response("{}", { status: 402, headers: { "payment-required": encodePaymentRequiredHeader(offer as any) } }));
-  await assert.rejects(() => accessResource(`${origin}/subscriber-resource`, { address, signMessage: async () => { signed = true; return "0xab"; } }), /domain|origin/i);
+  await assert.rejects(() => accessResource(`${origin}/subscriber-resource`, { address, signMessage: async () => { signed = true; return "0xab"; } }), /origin/i);
   assert.equal(signed, false);
+});
+
+test("rejects a wallet selection change before signing and a mismatched executor signature", async () => {
+  const first = privateKeyToAccount(generatePrivateKey());
+  const second = privateKeyToAccount(generatePrivateKey());
+  let selected = first.address;
+  const ctx = { walletStateManager: { read: () => ({ selectedWallet: { namespace: "evm", mode: "server", ref: { address: selected } },
+    remoteWallets: [{ address: first.address }, { address: second.address }] }) },
+  walletExecutor: async () => async ({ message }: { message: string }) => ({ kind: "signature", signature: await second.signMessage({ message }) }) };
+  const wallet = await subscriptionWallet(ctx as any, io, "test");
+  await assert.rejects(() => wallet.signMessage("challenge"), /different wallet/);
+  selected = second.address;
+  await assert.rejects(() => wallet.signMessage("challenge"), /Selected wallet changed/);
 });
 
 
 test("Agent Wallet signs one bounded root delegation directly to the adapter", async () => {
+  const start = Math.floor(Date.now() / 1000);
+  const expiry = start + 100;
   const signer = privateKeyToAccount(generatePrivateKey());
   const merchant = "0x3333333333333333333333333333333333333333" as const;
   const adapter = "0x4444444444444444444444444444444444444444" as const;
   const environment = getSmartAccountsEnvironment(84532);
   const client = new AgentWalletSubscriptionClient({
     getAddress: async () => signer.address,
+    signMessage: message => signer.signMessage({ message }),
     signTypedData: input => signer.signTypedData(input as any),
   });
   const context = await client.createPermission({
     record: { ...record, subscriber: signer.address, payer: agreement, merchant, adapter, manager: environment.DelegationManager },
-    permission: { startTime: 100, expiry: 200 },
-    requirements: { asset: address, amount: "1000000", payTo: merchant,
+    permission: { startTime: start, expiry },
+    requirements: { asset: NATIVE_ETH_ASSET, amount: "1000000", payTo: merchant,
       extra: { planId: "test", periodDuration: 15, token: { symbol: "SUBTEST", decimals: 18, formattedAmount: "dust" }, cancellationPolicy: "Cancel" } },
     resource: {},
   });
@@ -93,13 +113,12 @@ test("Agent Wallet signs one bounded root delegation directly to the adapter", a
   assert.ok(isAddressEqual(delegation.delegator, agreement));
   assert.ok(isAddressEqual(delegation.delegate, adapter));
   const caveat = (enforcer: string) => delegation.caveats.find(item => isAddressEqual(item.enforcer, enforcer as `0x${string}`))!;
-  const periodic = decodeERC20TokenPeriodTransferTerms(caveat(environment.caveatEnforcers.ERC20PeriodTransferEnforcer).terms);
-  assert.deepEqual(periodic, { tokenAddress: address, periodAmount: 1000000n, periodDuration: 15, startDate: 100 });
-  assert.equal(decodeTimestampTerms(caveat(environment.caveatEnforcers.TimestampEnforcer).terms).beforeThreshold, 200);
+  const periodic = decodeNativeTokenPeriodTransferTerms(caveat(environment.caveatEnforcers.NativeTokenPeriodTransferEnforcer).terms);
+  assert.deepEqual(periodic, { periodAmount: 1000000n, periodDuration: 15, startDate: start });
+  assert.equal(decodeTimestampTerms(caveat(environment.caveatEnforcers.TimestampEnforcer).terms).beforeThreshold, expiry);
   assert.deepEqual(decodeRedeemerTerms(caveat(environment.caveatEnforcers.RedeemerEnforcer).terms).redeemers, [adapter]);
-  const payee = decodeAllowedCalldataTerms(caveat(environment.caveatEnforcers.AllowedCalldataEnforcer).terms);
-  assert.equal(payee.startIndex, 4);
-  assert.equal(payee.value.slice(-40).toLowerCase(), merchant.slice(2).toLowerCase());
+  const payee = decodeAllowedTargetsTerms(caveat(environment.caveatEnforcers.AllowedTargetsEnforcer).terms);
+  assert.deepEqual(payee.targets, [merchant]);
 });
 
 test("resource URLs allow stable local fixtures without permitting arbitrary HTTP", () => {
@@ -151,61 +170,36 @@ test("status discovers the merchant endpoint without requesting a wallet executo
   assert.deepEqual(await Status.prototype.execute.call({ ctx } as any, {} as any), expected);
 });
 
-test("subscribe reuses installed permission and binding, then rejects active or canceled subscriptions", async t => {
-  t.mock.method(policyCli, "run", async () => ({
-    address,
-    policy: yaml.dump({ wallet_address: address, addresses: { allowlist: [{ address: agreement, chain_id: 84532 }], blocklist: [] } }),
-  }));
-  const resource = "http://127.0.0.1:1234/subscriber-resource";
-  let agreementState = keccak256(toBytes("AUTO_RENEW_ON"));
-  let paidThrough = 0n;
-  let signatures = 0;
-  let activations = 0;
-  const challenge = encodePaymentRequiredHeader({
-    x402Version: 2,
-    resource: { url: resource },
-    accepts: [{ scheme: "shodai-subscription", network: "eip155:84532", asset: address, amount: "1000000", payTo: address, maxTimeoutSeconds: 600,
-      extra: { planId: "test", periodDuration: 15, token: { symbol: "SUBTEST", decimals: 18, formattedAmount: "0.000000000001" },
-        agentWalletSetup: { endpoint: "http://127.0.0.1:1234/setup" } } }],
-  } as any);
+test("POST discovery preserves method and body through authenticated setup", async t => {
+  const resource = "http://127.0.0.1:1234/v0/agreements/deploy-with-permit";
+  const setup = "http://127.0.0.1:1234/v0/subscriptions/setup";
+  const challengeEndpoint = "http://127.0.0.1:1234/v0/subscriptions/challenge";
+  const body = JSON.stringify({ agreement: { title: "A" }, parties: [address, agreement] });
+  const calls: Array<{ url: string; method?: string; body?: string }> = [];
+  const offer = encodePaymentRequiredHeader({ x402Version: 2, resource: { url: resource },
+    accepts: [{ scheme: "shodai-subscription", network: "eip155:84532", asset: NATIVE_ETH_ASSET,
+      amount: "1000000000", payTo: address, maxTimeoutSeconds: 600,
+      extra: { planId: "test", periodDuration: 60, challengeEndpoint, agentWalletSetup: { endpoint: setup } } }] } as any);
   t.mock.method(globalThis, "fetch", async (input: string, init?: RequestInit) => {
-    if (input.endsWith("/setup") && init?.method === "POST") return Response.json({ record, permission: { startTime: 100, expiry: 200 } });
-    if ((init?.headers as Record<string, string>)?.["PAYMENT-SIGNATURE"]) {
-      activations++;
-      return Response.json({ access: "granted" });
+    calls.push({ url: input, method: init?.method, body: init?.body as string | undefined });
+    if (input === resource) return new Response("{}", { status: 402, headers: { "payment-required": offer } });
+    if (input === challengeEndpoint) {
+      const challenged = JSON.parse(init?.body as string);
+      return Response.json({ challengeId: "one", message: `Resource: ${challenged.resource}` });
     }
-    return new Response("{}", { status: 402, headers: { "payment-required": challenge } });
+    if (input === setup) return Response.json({ record, permission: { startTime: 100, expiry: 200 } });
+    throw new Error(`Unexpected URL: ${input}`);
   });
-  const state = { selectedWallet: { mode: "server", namespace: "evm", ref: { address } }, remoteWallets: [{ address }] };
-  const ctx = {
-    args: { "resource-url": resource },
-    walletStateManager: { read: () => state },
-    publicClient: () => ({
-      readContract: async ({ functionName }: { functionName: string }) => {
-        if (functionName === "currentState") return agreementState;
-        if (functionName === "lastPaidThrough") return paidThrough;
-        if (functionName === "agreement") return agreement;
-        if (functionName === "permissionContext") return "0x1234";
-        throw new Error(`Unexpected read: ${functionName}`);
-      },
-    }),
-    walletExecutor: async () => async (request: { kind: string; typedData: { primaryType: string } }) => {
-      assert.equal(request.kind, "typed-data");
-      assert.equal(request.typedData.primaryType, "Activation");
-      signatures++;
-      return { kind: "signature", signature: `0x${"ab".repeat(32)}` };
-    },
-  };
-  const run = () => Subscribe.prototype.execute.call({ ctx, pluginCommandId: "shodai:subscribe" } as any, { emit: () => {} } as any);
-  const result = await run();
-  assert.ok("alreadyBound" in result.binding && result.binding.alreadyBound);
-  assert.equal((result.installation as { alreadyInstalled: boolean }).alreadyInstalled, true);
-  assert.equal(signatures, 1);
-  assert.equal(activations, 1);
-  paidThrough = 30n;
-  await assert.rejects(run, (error: any) => error.code === "SUBSCRIPTION_ALREADY_ACTIVATED");
-  agreementState = keccak256(toBytes("AUTO_RENEW_OFF"));
-  await assert.rejects(run, (error: any) => error.code === "SUBSCRIPTION_CANCELED");
-  assert.equal(signatures, 1);
-  assert.equal(activations, 1);
+  const client = new AgentWalletSubscriptionClient({
+    getAddress: async () => address,
+    signMessage: async () => "0xab",
+    signTypedData: async () => "0xab",
+  });
+  const result = await client.begin(resource, { method: "POST", body });
+  assert.ok(!("alreadyCovered" in result));
+  assert.deepEqual(calls[0], { url: resource, method: "POST", body });
+  assert.equal(calls[1].url, challengeEndpoint);
+  assert.equal(calls[2].url, setup);
+  assert.equal((JSON.parse(calls[2].body!) as { agentWallet: string }).agentWallet, address);
+  assert.deepEqual(requestInit(resourceRequest({ method: "POST", body })).body, body);
 });

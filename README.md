@@ -31,12 +31,14 @@ plugin source. This path was verified with stock Agent Wallet 6.2.1.
 
 ## Commands
 
-- `mm shodai subscribe <resource-url>` subscribes and returns protected content.
-- `mm shodai access <resource-url>` authenticates with SIWx and retrieves content.
-- `mm shodai status <resource-url>` reads subscription and renewal status without signing.
+- `mm shodai subscribe <resource-url> --method POST --body '<JSON>'` discovers the offer on the attempted operation, prepares a native-ETH payer, and retries that same operation after payment. Omit the flags for GET. `--expires-at <ISO date/time>` overrides the one-year authorization default.
+- `mm shodai access <resource-url> [--method POST --body '<JSON>']` authenticates and performs a covered operation without another initial charge.
+- `mm shodai status <resource-url> [--method POST --body '<JSON>']` discovers the public status endpoint without signing.
 - `mm shodai cancel <agreement-address>` disables future renewal.
 
 Public resources must use HTTPS. HTTP is accepted for loopback and private-LAN development resources.
+
+The plugin verifies the derived Hybrid DeleGator payer, adapter, Agreement, chain, recipient, amount, and period before displaying the payer address. Fund that address with an ordinary Base Sepolia ETH transfer outside the plugin, then rerun the same subscribe command. The native-ETH offer's `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` asset is a sentinel, not an ERC-20 contract. A network-ambiguous result is returned to the caller; the plugin does not replay non-idempotent requests automatically.
 
 ## Integration findings
 
