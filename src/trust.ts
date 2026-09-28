@@ -3,7 +3,6 @@ import { fileURLToPath } from "node:url";
 import { CommandError, type CommandIO } from "@metamask/agent-wallet/plugin";
 import yaml from "js-yaml";
 import { getAddress, type Address } from "viem";
-import { CHAIN_ID } from "./wallet.js";
 
 type PolicyEntry = { address: string; chain_id: number };
 type Policy = { wallet_address: string; addresses: { allowlist: PolicyEntry[]; blocklist: PolicyEntry[] } };
@@ -56,8 +55,8 @@ export const policyCli = {
   },
 };
 
-export async function ensureAgreementTrust(subscriber: Address, agreement: Address, io: CommandIO) {
-  const matches = (entry: PolicyEntry) => getAddress(entry.address) === getAddress(agreement) && [0, CHAIN_ID].includes(entry.chain_id);
+export async function ensureAgreementTrust(subscriber: Address, agreement: Address, chainId: number, io: CommandIO) {
+  const matches = (entry: PolicyEntry) => getAddress(entry.address) === getAddress(agreement) && entry.chain_id === chainId;
   const read = async () => {
     const result = await policyCli.run("get", io);
     const policy = yaml.load(result.policy ?? "") as Policy;
@@ -69,13 +68,13 @@ export async function ensureAgreementTrust(subscriber: Address, agreement: Addre
     return policy;
   };
   const policy = await read();
-  if (policy.addresses.allowlist.some(matches)) return { alreadyTrusted: true, agreement, chainId: CHAIN_ID };
-  policy.addresses.allowlist.push({ address: agreement, chain_id: CHAIN_ID });
+  if (policy.addresses.allowlist.some(matches)) return { alreadyTrusted: true, agreement, chainId };
+  policy.addresses.allowlist.push({ address: agreement, chain_id: chainId });
   const result = await policyCli.run("set", io, yaml.dump(policy));
   if (result.status !== "confirmed") {
     throw new CommandError("SUBSCRIPTION_TRUST_PENDING", `Agreement trust is ${result.status ?? "unconfirmed"}; request ${result.requestId ?? "unknown"}. Subscription not activated.`,
       "Complete the existing MetaMask approval before retrying subscribe. Do not submit another policy request while it is pending.");
   }
   if (!(await read()).addresses.allowlist.some(matches)) throw new Error("Confirmed wallet policy does not contain Agreement trust; subscription not activated");
-  return { alreadyTrusted: false, agreement, chainId: CHAIN_ID };
+  return { alreadyTrusted: false, agreement, chainId };
 }
