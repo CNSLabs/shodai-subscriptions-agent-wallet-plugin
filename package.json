@@ -34,25 +34,25 @@
         "id": "shodai:status",
         "capabilities": ["wallet-read"],
         "dataAccess": ["accounts", "network"],
-        "targetChains": [84532]
+        "targetChains": "any"
       },
       {
         "id": "shodai:subscribe",
         "capabilities": ["wallet-read", "wallet-submit"],
         "dataAccess": ["accounts", "network"],
-        "targetChains": [84532]
+        "targetChains": "any"
       },
       {
         "id": "shodai:access",
         "capabilities": ["wallet-read", "wallet-submit"],
         "dataAccess": ["accounts", "network"],
-        "targetChains": [84532]
+        "targetChains": "any"
       },
       {
         "id": "shodai:cancel",
         "capabilities": ["wallet-read", "wallet-submit"],
         "dataAccess": ["accounts", "network"],
-        "targetChains": [84532]
+        "targetChains": "any"
       }
     ]
   },

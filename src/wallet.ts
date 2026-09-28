@@ -2,8 +2,6 @@ import type { CommandIO, PluginCommandContext } from "@metamask/agent-wallet/plu
 import { getAddress, isAddressEqual, recoverMessageAddress, recoverTypedDataAddress, type Address, type Hex } from "viem";
 import type { SubscriptionWallet } from "./subscription-client.js";
 
-export const CHAIN_ID = 84532;
-
 export function selectedAddress(ctx: PluginCommandContext): Address {
   const state = ctx.walletStateManager.read();
   const selected = state.selectedWallet;
@@ -26,9 +24,9 @@ export async function subscriptionWallet(ctx: PluginCommandContext, io: CommandI
   };
   const signer: SubscriptionWallet = {
     getAddress: async () => address,
-    signMessage: async (message: string) => {
+    signMessage: async (message: string, chainId: number) => {
       assertSelected();
-      const result = await execute({ kind: "message", chainId: CHAIN_ID, message, intent: { action: "custom", summary: "Authenticate subscription resource access" } }, options);
+      const result = await execute({ kind: "message", chainId, message, intent: { action: "custom", summary: "Authenticate subscription resource access" } }, options);
       if (result.kind !== "signature" || !result.signature) throw new Error(result.failureDescription ?? `Signing ended with ${result.status}`);
       if (!isAddressEqual(await recoverMessageAddress({ message, signature: result.signature as Hex }), address)) {
         throw new Error(`Wallet proof was signed by a different wallet; reselect ${address} and retry`);
@@ -51,12 +49,12 @@ export async function subscriptionWallet(ctx: PluginCommandContext, io: CommandI
   return {
     ...signer,
     address,
-    send: async (to: Address, data: Hex, summary: string, call: { function: string; arguments: Record<string, unknown> }) => {
+    send: async (chainId: number, to: Address, data: Hex, summary: string, call: { function: string; arguments: Record<string, unknown> }) => {
       assertSelected();
       io.emit(`${summary}: ${JSON.stringify({ target: to, ...call }, bigintJson)}`);
-      const result = await execute({ kind: "transaction", chainId: CHAIN_ID, transaction: { to, data, value: 0n }, intent: { action: "call", summary } }, options);
+      const result = await execute({ kind: "transaction", chainId, transaction: { to, data, value: 0n }, intent: { action: "call", summary } }, options);
       if (result.kind !== "transaction" || !result.hash) throw new Error(result.failureDescription ?? `Transaction ended with ${result.status}; job ${result.pendingJob?.pollingId ?? "unknown"}`);
-      const receipt = await ctx.publicClient(CHAIN_ID).waitForTransactionReceipt({ hash: result.hash as Hex });
+      const receipt = await ctx.publicClient(chainId).waitForTransactionReceipt({ hash: result.hash as Hex });
       if (receipt.status !== "success") throw new Error(`Transaction reverted: ${result.hash}`);
       const confirmed = { status: receipt.status, hash: receipt.transactionHash, blockNumber: receipt.blockNumber.toString(), target: to, ...call };
       io.emit(`Confirmed transaction: ${JSON.stringify(confirmed, bigintJson)}`);

@@ -11,7 +11,6 @@ export type SubscriptionExtra = {
   statusEndpoint?: string;
   token: { symbol: string; decimals: number; formattedAmount: string };
   agentWalletSetup?: { endpoint: string };
-  challengeEndpoint?: string;
   cancellationPolicy: string;
   assetTransferMethod?: string;
   paymentFlow?: string;
