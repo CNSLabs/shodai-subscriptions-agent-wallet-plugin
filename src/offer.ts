@@ -38,7 +38,7 @@ export function selectOffer(header: string, resourceUrl: string): SelectedOffer 
       const expires = Date.parse(siwx.info.expirationTime ?? "");
       if (siwx.info.domain !== new URL(origin).host || siwx.info.uri !== resourceUrl ||
           !siwx.info.nonce || !Number.isFinite(issued) || !Number.isFinite(expires) ||
-          issued > now + 30_000 || now - issued > 300_000 || expires <= now || expires - issued > 300_000) return [];
+          issued > now + 30_000 || now - issued > 600_000 || expires <= now || expires - issued > 600_000) return [];
       const setupUrl = new URL(extra.agentWalletSetup.endpoint, resourceUrl);
       const statusUrl = extra.statusEndpoint ? new URL(extra.statusEndpoint, resourceUrl) : undefined;
       if (setupUrl.origin !== origin || (statusUrl && statusUrl.origin !== origin)) return [];
