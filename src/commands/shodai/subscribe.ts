@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { Args, Flags } from "@oclif/core";
 import { CommandError, PluginCommand, type CommandIO } from "@metamask/agent-wallet/plugin";
 import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@x402/core/http";
@@ -121,10 +122,22 @@ export default class Subscribe extends PluginCommand<object> {
       resource: url, nonce: `0x${randomBytes(32).toString("hex")}` as `0x${string}`, deadline: Math.floor(Date.now() / 1000) + 600 };
     const signature = await wallet.signTypedData({ chainId, ...activationTypedData(activation, chainId, record.merchant), intent: "Activate subscription and authorize initial collection" });
     const payment = { x402Version: 2, payload: { ...activation, signature } };
-    const response = await requestResource(url, requestInit(request, {
+    let response = await requestResource(url, requestInit(request, {
       "SIGN-IN-WITH-X": started.proof,
       "PAYMENT-SIGNATURE": encodePaymentSignatureHeader({ ...payment, resource: started.resource as unknown as ResourceInfo, accepted: requirement }),
     }), "Subscription activation");
+    if (response.status === 401 && (await response.clone().text()).includes("Invalid or expired SIGN-IN-WITH-X proof")) {
+      const refreshed = await client.begin(url, request);
+      if ("alreadyCovered" in refreshed) return { resource: url, status: refreshed.alreadyCovered.status, content: await refreshed.alreadyCovered.text() };
+      if (refreshed.record.id !== record.id || refreshed.offer.chainId !== chainId ||
+          !isDeepStrictEqual(refreshed.requirements, started.requirements)) {
+        throw new CommandError("SUBSCRIPTION_TERMS_MISMATCH", "Subscription changed while refreshing wallet authentication", "Inspect the merchant offer before retrying.");
+      }
+      response = await requestResource(url, requestInit(request, {
+        "SIGN-IN-WITH-X": refreshed.proof,
+        "PAYMENT-SIGNATURE": encodePaymentSignatureHeader({ ...payment, resource: started.resource as unknown as ResourceInfo, accepted: requirement }),
+      }), "Subscription activation");
+    }
     if (!response.ok) return resourceError(response, "Subscription activation");
     const paymentResponse = response.headers.get("payment-response");
     const collection = paymentResponse ? decodePaymentResponseHeader(paymentResponse) : null;

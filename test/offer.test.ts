@@ -23,7 +23,7 @@ function offer(asset = NATIVE_ETH_ASSET, chainId = 84532) {
     extra: { version: "1", planId: "plan", periodDuration: 60,
       agentWalletSetup: { endpoint: `${origin}/subscriptions/setup` }, statusEndpoint: `${origin}/subscriptions/status` } }],
     extensions: { "sign-in-with-x": { info: { domain: "resource.example", uri: url, version: "1",
-      nonce: "a".repeat(32), issuedAt: new Date(now).toISOString(), expirationTime: new Date(now + 300_000).toISOString() },
+      nonce: "a".repeat(32), issuedAt: new Date(now).toISOString(), expirationTime: new Date(now + 600_000).toISOString() },
       supportedChains: [{ chainId: `eip155:${chainId}`, type: "eip191" }], schema: {} } } };
 }
 
@@ -32,6 +32,15 @@ test("native and ERC-20 offers keep asset and chain independent", () => {
   const erc20 = selectOffer(encodePaymentRequiredHeader(offer(token, 8453) as any), url);
   assert.deepEqual([native.native, native.chainId], [true, 84532]);
   assert.deepEqual([erc20.native, erc20.chainId, erc20.requirement.asset], [false, 8453, token]);
+});
+
+test("SIWx offer lifetime matches the wallet approval window", () => {
+  assert.doesNotThrow(() => selectOffer(encodePaymentRequiredHeader(offer() as any), url));
+  const tooLong = offer();
+  tooLong.extensions["sign-in-with-x"].info.expirationTime = new Date(
+    Date.parse(tooLong.extensions["sign-in-with-x"].info.issuedAt) + 600_001,
+  ).toISOString();
+  assert.throws(() => selectOffer(encodePaymentRequiredHeader(tooLong as any), url), /compatible/);
 });
 
 test("ambiguous, wrong-origin, and malformed offers fail before signing", () => {
