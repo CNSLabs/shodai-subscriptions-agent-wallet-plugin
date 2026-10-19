@@ -13,6 +13,7 @@ import { AgentWalletSubscriptionClient } from "../src/subscription-client.js";
 import { NATIVE_ETH_ASSET } from "../src/protocol.js";
 import { selectOffer } from "../src/offer.js";
 import { requestInit, resourceRequest } from "../src/request.js";
+import { collectionOutcome } from "../src/http.js";
 import type { SubscriptionRecord } from "../src/protocol.js";
 import { ensureAgreementTrust, policyCli } from "../src/trust.js";
 import Access from "../src/commands/shodai/access.js";
@@ -23,7 +24,7 @@ import Status from "../src/commands/shodai/status.js";
 const address = "0x1111111111111111111111111111111111111111";
 const agreement = "0x2222222222222222222222222222222222222222";
 const record: SubscriptionRecord = { id: "test", planId: "test", subscriber: address, payer: agreement,
-  merchant: address, agreement, adapter: address, manager: address, enforcer: address, status: "pending" };
+  merchant: address, agreement, adapter: address, manager: address, enforcer: address };
 const io = { notify: () => {}, emit: () => {} } as any;
 const siwx = (resource: string, chainId = 84532) => ({ "sign-in-with-x": {
   info: { domain: new URL(resource).host, uri: resource, version: "1", nonce: "abcdef0123456789", issuedAt: new Date().toISOString(),
@@ -85,7 +86,7 @@ test("message uses the stock executor API; cross-origin SIWx fails before signin
   }], extensions: { ...siwx(`${origin}/subscriber-resource`), "sign-in-with-x": { ...siwx(`${origin}/subscriber-resource`)["sign-in-with-x"], info: {
     ...siwx(`${origin}/subscriber-resource`)["sign-in-with-x"].info, uri: "https://other.example/resource" } } } };
   t.mock.method(globalThis, "fetch", async () => new Response("{}", { status: 402, headers: { "payment-required": encodePaymentRequiredHeader(offer as any) } }));
-  await assert.rejects(() => accessResource(`${origin}/subscriber-resource`, { address, signMessage: async () => { signed = true; return "0xab"; } }), /compatible/i);
+  await assert.rejects(() => accessResource(`${origin}/subscriber-resource`, { address, signMessage: async () => { signed = true; return "0xab"; } }), /authentication/i);
   assert.equal(signed, false);
 });
 
@@ -291,4 +292,76 @@ test("SIWx-only retry returns covered content without setup", async t => {
   const result = await client.begin(resource);
   assert.ok("alreadyCovered" in result);
   assert.equal(calls, 2);
+});
+
+test("access and subscribe authenticate existing paid coverage with no purchase offer", async t => {
+  const resource = "https://merchant.example/subscriber-resource";
+  const challenge = encodePaymentRequiredHeader({ x402Version: 2, resource: { url: resource }, accepts: [], extensions: siwx(resource) } as any);
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async (input, init) => {
+    assert.equal(String(input), resource);
+    assert.equal(init?.redirect, "error");
+    calls++;
+    if (!(init?.headers as Record<string, string>)["SIGN-IN-WITH-X"]) return new Response("{}", { status: 402, headers: { "payment-required": challenge } });
+    return new Response("covered", { status: 200 });
+  });
+  const wallet = { address, getAddress: async () => address, signMessage: async () => "0xab" as const, signTypedData: async () => { throw new Error("No payment signature"); } };
+  assert.equal((await accessResource(resource, wallet)).content, "covered");
+  const started = await new AgentWalletSubscriptionClient(wallet).begin(resource);
+  assert.ok("alreadyCovered" in started);
+  assert.equal(calls, 4);
+});
+
+test("authentication refresh preserves the signed collection header and original operation without setup", async t => {
+  const resource = "https://merchant.example/subscriber-resource";
+  const body = '{"action":"create"}';
+  const challenge = encodePaymentRequiredHeader({ x402Version: 2, resource: { url: resource }, accepts: [], extensions: siwx(resource) } as any);
+  const calls: RequestInit[] = [];
+  let messages = 0;
+  const client = new AgentWalletSubscriptionClient({ getAddress: async () => address,
+    signMessage: async () => { messages++; return "0xab"; }, signTypedData: async () => { throw new Error("Collection must retain its existing signature"); } },
+    async (input, init) => {
+      assert.equal(String(input), resource); calls.push(init!);
+      if (calls.length === 1) return new Response("Invalid or expired SIGN-IN-WITH-X proof", { status: 401 });
+      if (calls.length < 4) return new Response("{}", { status: 402, headers: { "payment-required": challenge } });
+      return Response.json({ code: "subscription_payment_pending", subscriptionId: "subscription", paymentId: "payment" }, { status: 503 });
+    });
+  t.mock.method(client, "begin", async () => { throw new Error("Refresh must not invoke setup"); });
+  const response = await client.requestAuthorizedResource(resource, { method: "POST", body }, "old-proof", "unchanged-signed-message");
+  assert.deepEqual(await collectionOutcome(response), { outcome: "pending", subscriptionId: "subscription", paymentId: "payment" });
+  assert.equal(messages, 1);
+  for (const init of calls) { assert.equal(init.method, "POST"); assert.equal(init.body, body); assert.equal(init.redirect, "error"); }
+  assert.equal((calls[0].headers as Record<string, string>)["PAYMENT-SIGNATURE"], (calls[3].headers as Record<string, string>)["PAYMENT-SIGNATURE"]);
+  assert.equal((calls[1].headers as Record<string, string>)["PAYMENT-SIGNATURE"], undefined);
+  assert.equal((calls[2].headers as Record<string, string>)["PAYMENT-SIGNATURE"], undefined);
+});
+
+test("status discovery stays read-only with closed Plans and unrelated purchase offers", async t => {
+  const resource = "https://merchant.example/subscriber-resource";
+  const endpoint = "https://merchant.example/status?product=reference";
+  const challenge = encodePaymentRequiredHeader({ x402Version: 2, resource: { url: resource },
+    accepts: [{ scheme: "exact", network: "eip155:84532", asset: NATIVE_ETH_ASSET, amount: "1", payTo: address, maxTimeoutSeconds: 600 }],
+    extensions: { "shodai-subscription": { version: "1", statusEndpoint: endpoint } } } as any);
+  const expected = { subscription: { id: "retained", planId: "closed-plan", network: "eip155:84532", subscriber: address, merchant: address, payer: null, agreement: null, adapter: null },
+    renewalEnabled: null, accessPaid: null, paidThrough: null, latestCollection: null, renewalError: null };
+  t.mock.method(globalThis, "fetch", async (input, init) => {
+    const url = new URL(String(input));
+    assert.equal(init?.method ?? "GET", "GET"); assert.equal(init?.body, undefined); assert.equal(init?.redirect, "error");
+    if (url.pathname === "/status") {
+      assert.equal(url.searchParams.get("product"), "reference"); assert.equal(url.searchParams.get("subscriber"), address);
+      return Response.json(expected);
+    }
+    return new Response("{}", { status: 402, headers: { "payment-required": challenge } });
+  });
+  const ctx = { args: { "resource-url": resource }, walletStateManager: { read: () => ({ selectedWallet: { mode: "server", namespace: "evm", ref: { address } }, remoteWallets: [{ address }] }) },
+    walletExecutor: () => { throw new Error("Status must not request signing or transactions"); } };
+  assert.deepEqual(await Status.prototype.execute.call({ ctx } as any, {} as any), expected);
+});
+
+test("known collection outcomes remain distinct from resource access and transport failure", async () => {
+  assert.deepEqual(await collectionOutcome(Response.json({ code: "subscription_service_unavailable" }, { status: 503 })), { outcome: "unavailable" });
+  assert.deepEqual(await collectionOutcome(Response.json({ code: "subscription_payment_failed", subscriptionId: "s", paymentId: "p", message: "Collection failed" }, { status: 503 })),
+    { outcome: "failed", subscriptionId: "s", paymentId: "p", message: "Collection failed" });
+  assert.equal(await collectionOutcome(Response.json({ message: "other failure" }, { status: 503 })), undefined);
+  assert.equal(await collectionOutcome(new Response("resource", { status: 200 })), undefined);
 });

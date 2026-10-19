@@ -26,7 +26,6 @@ export type SubscriptionRecord = {
   adapter: Address;
   manager: Address;
   enforcer: Address;
-  status: "pending" | "active" | "canceled";
 };
 
 export type Activation = {
@@ -40,23 +39,19 @@ export type Activation = {
   signature: Hex;
 };
 
-export type CollectionAttempt = {
-  recordId: string;
-  kind: "initial" | "automatic";
-  attemptedAt: string;
-  outcome: "pending" | "success" | "failed";
-  transaction?: Hex;
-  receipt?: { status: "success"; hash: Hex; blockNumber: string };
-  paidThrough?: string;
-  error?: string;
-};
-
-export type SubscriptionStatus = {
-  subscription: Pick<SubscriptionRecord, "id" | "subscriber" | "payer" | "merchant" | "agreement" | "adapter"> | null;
+export type BuyerStatus = {
+  subscription: {
+    id: string; planId: string; network: string; subscriber: Address; merchant: Address;
+    payer: Address | null; agreement: Address | null; adapter: Address | null;
+  } | null;
   renewalEnabled: boolean | null;
   accessPaid: boolean | null;
   paidThrough: string | null;
-  latestCollection: CollectionAttempt | null;
+  latestCollection: {
+    recordId: string; kind: "initial" | "automatic"; attemptedAt: string;
+    outcome: "pending" | "success" | "failed";
+    transaction: Hex | null; paidThrough: string | null; error: string | null;
+  } | null;
   renewalError: string | null;
 };
 

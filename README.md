@@ -31,9 +31,9 @@ plugin source. This path was verified with stock Agent Wallet 6.2.1.
 
 ## Commands
 
-- `mm shodai subscribe <resource-url> --method POST --body '<JSON>'` discovers the offer on the attempted operation, prepares a native-ETH payer, and retries that same operation after payment. Omit the flags for GET. `--expires-at <ISO date/time>` overrides the one-year authorization default.
+- `mm shodai subscribe <resource-url> --method POST --body '<JSON>'` discovers the offer on the attempted operation, prepares a native-ETH payer, and retries that same operation after payment. Omit the flags for GET. `--expires-at <ISO date/time>` overrides the setup response's 24-hour authorization default.
 - `mm shodai access <resource-url> [--method POST --body '<JSON>']` authenticates and performs a covered operation without another initial charge.
-- `mm shodai status <resource-url> [--method POST --body '<JSON>']` discovers the public status endpoint without signing.
+- `mm shodai status <resource-url>` discovers the public status endpoint without signing, including when the resource has no purchase offer.
 - `mm shodai cancel <agreement-address>` disables future renewal.
 
 Public resources must use HTTPS. HTTP is accepted for loopback and private-LAN development resources.

@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import { Args, Flags } from "@oclif/core";
 import { CommandError, PluginCommand, type CommandIO } from "@metamask/agent-wallet/plugin";
 import { decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@x402/core/http";
@@ -11,8 +10,8 @@ import { AgentWalletSubscriptionClient, type AgentWalletSetup } from "../../subs
 import { activationTypedData, type SubscriptionExtra } from "../../protocol.js";
 import { adapterAbi, agreementAbi, erc20Abi, tokenAdapterAbi } from "../../abis.js";
 import { resourceUrl, subscriptionWallet } from "../../wallet.js";
-import { requestResource, resourceError } from "../../http.js";
-import { requestInit, resourceRequest } from "../../request.js";
+import { collectionOutcome, resourceError } from "../../http.js";
+import { resourceRequest } from "../../request.js";
 import { ensureAgreementTrust } from "../../trust.js";
 
 export default class Subscribe extends PluginCommand<object> {
@@ -22,7 +21,7 @@ export default class Subscribe extends PluginCommand<object> {
   static description = "Subscribe to an x402 shodai-subscription resource with the selected Agent Wallet. Creates a bounded recurring-payment permission, establishes Agreement trust, and performs the original request.";
   static args = { "resource-url": Args.string({ required: true }) };
   static flags = { ...PluginCommand.baseFlags, method: Flags.string({ default: "GET" }), body: Flags.string(),
-    "expires-at": Flags.string({ description: "Delegation expiry as an ISO date/time; defaults to one year" }) };
+    "expires-at": Flags.string({ description: "Delegation expiry as an ISO date/time; setup defaults to 24 hours" }) };
 
   async execute(io: CommandIO) {
     const url = resourceUrl(this.ctx.args?.["resource-url"]);
@@ -122,22 +121,10 @@ export default class Subscribe extends PluginCommand<object> {
       resource: url, nonce: `0x${randomBytes(32).toString("hex")}` as `0x${string}`, deadline: Math.floor(Date.now() / 1000) + 600 };
     const signature = await wallet.signTypedData({ chainId, ...activationTypedData(activation, chainId, record.merchant), intent: "Activate subscription and authorize initial collection" });
     const payment = { x402Version: 2, payload: { ...activation, signature } };
-    let response = await requestResource(url, requestInit(request, {
-      "SIGN-IN-WITH-X": started.proof,
-      "PAYMENT-SIGNATURE": encodePaymentSignatureHeader({ ...payment, resource: started.resource as unknown as ResourceInfo, accepted: requirement }),
-    }), "Subscription activation");
-    if (response.status === 401 && (await response.clone().text()).includes("Invalid or expired SIGN-IN-WITH-X proof")) {
-      const refreshed = await client.begin(url, request);
-      if ("alreadyCovered" in refreshed) return { resource: url, status: refreshed.alreadyCovered.status, content: await refreshed.alreadyCovered.text() };
-      if (refreshed.record.id !== record.id || refreshed.offer.chainId !== chainId ||
-          !isDeepStrictEqual(refreshed.requirements, started.requirements)) {
-        throw new CommandError("SUBSCRIPTION_TERMS_MISMATCH", "Subscription changed while refreshing wallet authentication", "Inspect the merchant offer before retrying.");
-      }
-      response = await requestResource(url, requestInit(request, {
-        "SIGN-IN-WITH-X": refreshed.proof,
-        "PAYMENT-SIGNATURE": encodePaymentSignatureHeader({ ...payment, resource: started.resource as unknown as ResourceInfo, accepted: requirement }),
-      }), "Subscription activation");
-    }
+    const response = await client.requestAuthorizedResource(url, request, started.proof,
+      encodePaymentSignatureHeader({ ...payment, resource: started.resource as unknown as ResourceInfo, accepted: requirement }));
+    const outcome = await collectionOutcome(response);
+    if (outcome) return { resource: url, status: response.status, ...outcome };
     if (!response.ok) return resourceError(response, "Subscription activation");
     const paymentResponse = response.headers.get("payment-response");
     const collection = paymentResponse ? decodePaymentResponseHeader(paymentResponse) : null;

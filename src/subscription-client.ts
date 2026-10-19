@@ -5,7 +5,8 @@ import { createCaveatBuilder } from "@metamask/smart-accounts-kit/utils";
 import { isAddressEqual, pad, type Address, type Hex, type TypedData } from "viem";
 import { type SubscriptionExtra, type SubscriptionRecord } from "./protocol.js";
 import { requestInit, type ResourceRequest } from "./request.js";
-import { selectOffer, signOffer, type SelectedOffer } from "./offer.js";
+import { selectAuthentication, selectOffer, signAuthentication, type SelectedOffer } from "./offer.js";
+import { requestResource } from "./http.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -32,23 +33,14 @@ export class AgentWalletSubscriptionClient {
   ) {}
 
   async begin(resourceUrl: string, request: ResourceRequest = { method: "GET" }): Promise<AgentWalletSetup | { alreadyCovered: Response }> {
+    const authenticated = await this.authenticate(resourceUrl, request);
+    if ("alreadyCovered" in authenticated) return authenticated;
     const agentWallet = await this.agentWallet.getAddress();
-    const response = await this.fetchImpl(resourceUrl, requestInit(request));
-    if (response.ok) return { alreadyCovered: response };
-    if (response.status !== 402) throw new Error(`Expected initial 402, received ${response.status}`);
-    const header = response.headers.get("payment-required");
-    if (!header) throw new Error("402 response is missing PAYMENT-REQUIRED");
-    let offer = selectOffer(header, resourceUrl);
-    await this.checkChain(offer.chainId);
-    const proof = await signOffer(offer, resourceUrl, { address: agentWallet, signMessage: (message, chainId) => this.agentWallet.signMessage(message, chainId) });
-    const authenticated = await this.fetchImpl(resourceUrl, requestInit(request, { "SIGN-IN-WITH-X": proof }));
-    if (authenticated.ok) return { alreadyCovered: authenticated };
-    if (authenticated.status !== 402) throw new Error(`Authenticated request returned ${authenticated.status}: ${await authenticated.text()}`);
-    const currentHeader = authenticated.headers.get("payment-required");
+    const { proof, response } = authenticated;
+    const currentHeader = response.headers.get("payment-required");
     if (!currentHeader) throw new Error("Authenticated 402 is missing PAYMENT-REQUIRED");
-    const currentOffer = selectOffer(currentHeader, resourceUrl);
-    if (currentOffer.chainId !== offer.chainId) throw new Error("Authenticated offer changed chains");
-    offer = currentOffer;
+    const offer = selectOffer(currentHeader, resourceUrl);
+    await this.checkChain(offer.chainId);
     const requirement = offer.requirement;
     const extra = requirement.extra;
     const setupUrl = offer.setupUrl;
@@ -57,7 +49,7 @@ export class AgentWalletSubscriptionClient {
       record?: SubscriptionRecord;
       permission?: { startTime?: number; expiry?: number };
     };
-    if (!setup.record || !setup.permission || !Number.isInteger(setup.permission.startTime) || !Number.isInteger(setup.permission.expiry)) {
+    if (!setup.record || !setup.permission || !Number.isSafeInteger(setup.permission.startTime) || !Number.isSafeInteger(setup.permission.expiry)) {
       throw new Error("Setup service returned incomplete subscription details");
     }
     if (!isAddressEqual(setup.record.subscriber, agentWallet)) throw new Error("Provisioned subscription belongs to a different Agent Wallet");
@@ -69,6 +61,31 @@ export class AgentWalletSubscriptionClient {
       offer,
       proof,
     };
+  }
+
+  async authenticate(resourceUrl: string, request: ResourceRequest = { method: "GET" }): Promise<{ alreadyCovered: Response } | { response: Response; proof: string }> {
+    const response = await this.fetchImpl(resourceUrl, requestInit(request));
+    if (response.ok) return { alreadyCovered: response };
+    if (response.status !== 402) throw new Error(`Expected initial 402, received ${response.status}`);
+    const header = response.headers.get("payment-required");
+    if (!header) throw new Error("402 response is missing PAYMENT-REQUIRED");
+    const challenge = selectAuthentication(header, resourceUrl);
+    await this.checkChain(challenge.chainId);
+    const address = await this.agentWallet.getAddress();
+    const proof = await signAuthentication(challenge, resourceUrl, { address, signMessage: (message, chainId) => this.agentWallet.signMessage(message, chainId) });
+    const authenticated = await this.fetchImpl(resourceUrl, requestInit(request, { "SIGN-IN-WITH-X": proof }));
+    if (authenticated.ok) return { alreadyCovered: authenticated };
+    if (authenticated.status !== 402) throw new Error(`Authenticated request returned ${authenticated.status}: ${await authenticated.text()}`);
+    return { response: authenticated, proof };
+  }
+
+  async requestAuthorizedResource(resourceUrl: string, request: ResourceRequest, proof: string, paymentHeader: string): Promise<Response> {
+    const send = (currentProof: string) => requestResource(resourceUrl, requestInit(request, { "SIGN-IN-WITH-X": currentProof, "PAYMENT-SIGNATURE": paymentHeader }), "Subscription activation", this.fetchImpl);
+    const response = await send(proof);
+    if (response.status !== 401 || !(await response.clone().text()).includes("Invalid or expired SIGN-IN-WITH-X proof")) return response;
+    const refreshed = await this.authenticate(resourceUrl, request);
+    if ("alreadyCovered" in refreshed) return refreshed.alreadyCovered;
+    return send(refreshed.proof);
   }
 
   async createPermission(setup: AgentWalletSetup, expiry = setup.permission.expiry): Promise<Hex> {
