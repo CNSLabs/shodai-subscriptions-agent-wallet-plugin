@@ -4,9 +4,12 @@ export const adapterAbi = [
   { type: "function", name: "installPermissionContext", stateMutability: "nonpayable", inputs: [{ name: "permissionContext", type: "bytes" }], outputs: [] },
   { type: "function", name: "lastPaidThrough", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "periodDuration", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "periodAmount", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "payer", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "subscriber", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "merchant", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "permissionContext", stateMutability: "view", inputs: [], outputs: [{ type: "bytes" }] },
   { type: "function", name: "startTime", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "token", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "event", name: "Renewed", inputs: [{ indexed: false, name: "paidThrough", type: "uint256" }, { indexed: false, name: "amount", type: "uint256" }] },
 ] as const;
 
@@ -19,5 +22,12 @@ export const agreementAbi = [
 ] as const;
 
 export const erc20Abi = [
+  { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "owner", type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "transfer", stateMutability: "nonpayable", inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ type: "bool" }] },
   { type: "event", name: "Transfer", inputs: [{ indexed: true, name: "from", type: "address" }, { indexed: true, name: "to", type: "address" }, { indexed: false, name: "value", type: "uint256" }] },
+] as const;
+
+export const tokenAdapterAbi = [
+  ...adapterAbi,
+  { type: "function", name: "token", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 ] as const;
