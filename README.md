@@ -1,4 +1,4 @@
-# Shodai Subscriptions Agent Wallet plugin
+# Agent Wallet Subscriptions
 
 MetaMask Agent Wallet commands for resources that advertise the `shodai-subscription` x402 scheme on Base Sepolia.
 
@@ -10,7 +10,7 @@ Requires MetaMask Agent Wallet 6.2 or later.
 
 ```sh
 mm config set experimentalPlugins true
-mm plugins install velvet-anvil --accept-permissions
+mm plugins install agent-wallet-subscriptions --accept-permissions
 ```
 
 Agent Wallet 6.2.0 and 6.2.1 have a host-side post-install defect that rolls
