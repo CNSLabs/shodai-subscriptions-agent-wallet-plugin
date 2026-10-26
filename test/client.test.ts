@@ -325,7 +325,7 @@ test("authentication refresh preserves the signed collection header and original
       if (calls.length === 1) return new Response("Invalid or expired SIGN-IN-WITH-X proof", { status: 401 });
       if (calls.length < 4) return new Response("{}", { status: 402, headers: { "payment-required": challenge } });
       return Response.json({ code: "subscription_payment_pending", subscriptionId: "subscription", paymentId: "payment" }, { status: 503 });
-    });
+    }, async () => {}, { intervalMs: 0, windowMs: 0 });
   t.mock.method(client, "begin", async () => { throw new Error("Refresh must not invoke setup"); });
   const response = await client.requestAuthorizedResource(resource, { method: "POST", body }, "old-proof", "unchanged-signed-message");
   assert.deepEqual(await collectionOutcome(response), { outcome: "pending", subscriptionId: "subscription", paymentId: "payment" });
@@ -334,6 +334,59 @@ test("authentication refresh preserves the signed collection header and original
   assert.equal((calls[0].headers as Record<string, string>)["PAYMENT-SIGNATURE"], (calls[3].headers as Record<string, string>)["PAYMENT-SIGNATURE"]);
   assert.equal((calls[1].headers as Record<string, string>)["PAYMENT-SIGNATURE"], undefined);
   assert.equal((calls[2].headers as Record<string, string>)["PAYMENT-SIGNATURE"], undefined);
+});
+
+const pending = () => Response.json({ code: "subscription_payment_pending", subscriptionId: "subscription", paymentId: "payment" }, { status: 503 });
+const noApprovals = { getAddress: async () => address as `0x${string}`,
+  signMessage: async (): Promise<`0x${string}`> => { throw new Error("Retry must not request a new sign-in"); },
+  signTypedData: async (): Promise<`0x${string}`> => { throw new Error("Retry must not request a new collection signature"); } };
+
+test("pending collection resends the same signed operation until access is granted, without new approvals", async () => {
+  const resource = "https://merchant.example/subscriber-resource";
+  const body = '{"action":"create"}';
+  const calls: RequestInit[] = [];
+  const notices: string[] = [];
+  const client = new AgentWalletSubscriptionClient(noApprovals, async (input, init) => {
+    assert.equal(String(input), resource); calls.push(init!);
+    return calls.length < 3 ? pending() : new Response("created", { status: 200 });
+  }, async () => {}, { intervalMs: 0, windowMs: 60_000 });
+  const response = await client.requestAuthorizedResource(resource, { method: "POST", body }, "proof", "signed-collection", message => notices.push(message));
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "created");
+  assert.equal(calls.length, 3);
+  assert.equal(notices.length, 2);
+  for (const init of calls) {
+    const headers = init.headers as Record<string, string>;
+    assert.equal(init.method, "POST"); assert.equal(init.body, body);
+    assert.equal(headers["SIGN-IN-WITH-X"], "proof"); assert.equal(headers["PAYMENT-SIGNATURE"], "signed-collection");
+  }
+});
+
+test("pending collection retries stop at the window or an expired proof and keep the pending outcome", async t => {
+  const resource = "https://merchant.example/subscriber-resource";
+  let clock = 0;
+  t.mock.method(Date, "now", () => clock);
+  let calls = 0;
+  const windowed = new AgentWalletSubscriptionClient(noApprovals, async () => { calls++; clock += 60_000; return pending(); },
+    async () => {}, { intervalMs: 0, windowMs: 120_000 });
+  const lapsed = await windowed.requestAuthorizedResource(resource, { method: "GET" }, "proof", "signed-collection");
+  assert.deepEqual(await collectionOutcome(lapsed), { outcome: "pending", subscriptionId: "subscription", paymentId: "payment" });
+  assert.equal(calls, 3, "the window starts at the first pending response and allows two 60-second retries");
+  calls = 0;
+  const expiring = new AgentWalletSubscriptionClient(noApprovals, async () => {
+    calls++;
+    return calls === 1 ? pending() : new Response("Invalid or expired SIGN-IN-WITH-X proof", { status: 401 });
+  }, async () => {}, { intervalMs: 0, windowMs: 120_000 });
+  const kept = await expiring.requestAuthorizedResource(resource, { method: "GET" }, "proof", "signed-collection");
+  assert.deepEqual(await collectionOutcome(kept), { outcome: "pending", subscriptionId: "subscription", paymentId: "payment" });
+  assert.equal(calls, 2);
+  calls = 0;
+  const failing = new AgentWalletSubscriptionClient(noApprovals, async () => {
+    calls++;
+    return calls === 1 ? Response.json({ code: "subscription_payment_failed", subscriptionId: "subscription", paymentId: "payment", message: "reverted" }, { status: 503 }) : pending();
+  }, async () => {}, { intervalMs: 0, windowMs: 120_000 });
+  assert.equal((await collectionOutcome(await failing.requestAuthorizedResource(resource, { method: "GET" }, "proof", "signed-collection")))?.outcome, "failed");
+  assert.equal(calls, 1);
 });
 
 test("status discovery stays read-only with closed Plans and unrelated purchase offers", async t => {
