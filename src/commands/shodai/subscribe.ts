@@ -122,7 +122,7 @@ export default class Subscribe extends PluginCommand<object> {
     const signature = await wallet.signTypedData({ chainId, ...activationTypedData(activation, chainId, record.merchant), intent: "Activate subscription and authorize initial collection" });
     const payment = { x402Version: 2, payload: { ...activation, signature } };
     const response = await client.requestAuthorizedResource(url, request, started.proof,
-      encodePaymentSignatureHeader({ ...payment, resource: started.resource as unknown as ResourceInfo, accepted: requirement }));
+      encodePaymentSignatureHeader({ ...payment, resource: started.resource as unknown as ResourceInfo, accepted: requirement }), message => io.emit(message));
     const outcome = await collectionOutcome(response);
     if (outcome) return { resource: url, status: response.status, ...outcome };
     if (!response.ok) return resourceError(response, "Subscription activation");

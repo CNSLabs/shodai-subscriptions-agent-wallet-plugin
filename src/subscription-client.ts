@@ -2,11 +2,12 @@ import { encodeDelegations } from "@metamask/delegation-core";
 import { createDelegation, getSmartAccountsEnvironment } from "@metamask/smart-accounts-kit";
 import { signDelegation } from "@metamask/smart-accounts-kit/actions";
 import { createCaveatBuilder } from "@metamask/smart-accounts-kit/utils";
+import { setTimeout as delay } from "node:timers/promises";
 import { isAddressEqual, pad, type Address, type Hex, type TypedData } from "viem";
 import { type SubscriptionExtra, type SubscriptionRecord } from "./protocol.js";
 import { requestInit, type ResourceRequest } from "./request.js";
 import { selectAuthentication, selectOffer, signAuthentication, type SelectedOffer } from "./offer.js";
-import { requestResource } from "./http.js";
+import { collectionOutcome, requestResource } from "./http.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -30,6 +31,7 @@ export class AgentWalletSubscriptionClient {
     private readonly agentWallet: SubscriptionWallet,
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly checkChain: (chainId: number) => Promise<void> = async () => {},
+    private readonly pendingRetry = { intervalMs: 5_000, windowMs: 120_000 },
   ) {}
 
   async begin(resourceUrl: string, request: ResourceRequest = { method: "GET" }): Promise<AgentWalletSetup | { alreadyCovered: Response }> {
@@ -79,13 +81,29 @@ export class AgentWalletSubscriptionClient {
     return { response: authenticated, proof };
   }
 
-  async requestAuthorizedResource(resourceUrl: string, request: ResourceRequest, proof: string, paymentHeader: string): Promise<Response> {
+  async requestAuthorizedResource(resourceUrl: string, request: ResourceRequest, proof: string, paymentHeader: string,
+    notify: (message: string) => void = () => {}): Promise<Response> {
     const send = (currentProof: string) => requestResource(resourceUrl, requestInit(request, { "SIGN-IN-WITH-X": currentProof, "PAYMENT-SIGNATURE": paymentHeader }), "Subscription activation", this.fetchImpl);
-    const response = await send(proof);
-    if (response.status !== 401 || !(await response.clone().text()).includes("Invalid or expired SIGN-IN-WITH-X proof")) return response;
-    const refreshed = await this.authenticate(resourceUrl, request);
-    if ("alreadyCovered" in refreshed) return refreshed.alreadyCovered;
-    return send(refreshed.proof);
+    let response = await send(proof);
+    if (response.status === 401 && (await response.clone().text()).includes("Invalid or expired SIGN-IN-WITH-X proof")) {
+      const refreshed = await this.authenticate(resourceUrl, request);
+      if ("alreadyCovered" in refreshed) return refreshed.alreadyCovered;
+      proof = refreshed.proof;
+      response = await send(proof);
+    }
+    // A pending collection settles in the background. Replaying the same signed request recovers that Payment rather
+    // than creating another, and the merchant performs the operation only once access is granted, so no new approval is needed.
+    const until = Date.now() + this.pendingRetry.windowMs;
+    while ((await collectionOutcome(response))?.outcome === "pending" && Date.now() < until) {
+      notify(`Collection pending; retrying the same signed request in ${Math.round(this.pendingRetry.intervalMs / 1000)}s`);
+      await delay(this.pendingRetry.intervalMs);
+      let retried: Response;
+      try { retried = await send(proof); } catch { return response; }
+      // Refreshing an expired proof would need another wallet signature; report the pending collection instead.
+      if (retried.status === 401) return response;
+      response = retried;
+    }
+    return response;
   }
 
   async createPermission(setup: AgentWalletSetup, expiry = setup.permission.expiry): Promise<Hex> {

@@ -38,7 +38,7 @@ plugin source. This path was verified with stock Agent Wallet 6.2.1.
 
 Public resources must use HTTPS. HTTP is accepted for loopback and private-LAN development resources.
 
-The plugin verifies the derived Hybrid DeleGator payer, adapter, Agreement, chain, recipient, amount, and period before displaying the payer address. Fund that address with an ordinary Base Sepolia ETH transfer outside the plugin, then rerun the same subscribe command. The native-ETH offer's `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` asset is a sentinel, not an ERC-20 contract. A network-ambiguous result is returned to the caller; the plugin does not replay non-idempotent requests automatically.
+The plugin verifies the derived Hybrid DeleGator payer, adapter, Agreement, chain, recipient, amount, and period before displaying the payer address. Fund that address with an ordinary Base Sepolia ETH transfer outside the plugin, then rerun the same subscribe command. The native-ETH offer's `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` asset is a sentinel, not an ERC-20 contract. A network-ambiguous result is returned to the caller; the plugin does not replay non-idempotent requests automatically. When the merchant reports the initial collection as pending (`subscription_payment_pending`), subscribe resends the same signed request every 5 seconds for up to 2 minutes. The merchant performs the operation only once access is granted, and the replayed collection recovers the same Payment, so this asks for no new approval. A collection still pending after that, or a sign-in proof that expires meanwhile, is reported as pending.
 
 ## Integration findings
 
