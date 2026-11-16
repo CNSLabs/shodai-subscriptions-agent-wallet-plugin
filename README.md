@@ -13,6 +13,8 @@ mm config set experimentalPlugins true
 mm plugins install agent-wallet-subscriptions --accept-permissions
 ```
 
+This installs directly on Agent Wallet 7.1.0 and later (verified with 7.3.0).
+
 Agent Wallet 6.2.0 and 6.2.1 have a host-side post-install defect that rolls
 back npm plugin installation. When evaluating with either affected version,
 install a local tarball from this checkout:
@@ -34,7 +36,7 @@ plugin source. This path was verified with stock Agent Wallet 6.2.1.
 - `mm shodai subscribe <resource-url> --method POST --body '<JSON>'` discovers the offer on the attempted operation, prepares a native-ETH payer, and retries that same operation after payment. Omit the flags for GET. `--expires-at <ISO date/time>` overrides the setup response's 24-hour authorization default.
 - `mm shodai access <resource-url> [--method POST --body '<JSON>']` authenticates and performs a covered operation without another initial charge.
 - `mm shodai status <resource-url>` discovers the public status endpoint without signing, including when the resource has no purchase offer.
-- `mm shodai cancel <agreement-address>` disables future renewal.
+- `mm shodai cancel <agreement-address> --chain-id <id>` disables future renewal. Base Sepolia is `--chain-id 84532`.
 
 Public resources must use HTTPS. HTTP is accepted for loopback and private-LAN development resources.
 

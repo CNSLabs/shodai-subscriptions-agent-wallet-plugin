@@ -1,6 +1,6 @@
 {
   "name": "agent-wallet-subscriptions",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Delegated subscription commands for MetaMask Agent Wallet",
   "repository": {
     "type": "git",
