@@ -58,10 +58,10 @@ mm shodai access <resource-url>
 mm shodai access <resource-url>
 ```
 
-In the observed run, each access signature required email approval. HTTPS is
-important to this reproduction: a private-LAN HTTP resource separately triggers
-MetaMask's malicious-signature warning, which would conflate transport-risk
-behavior with the missing-origin path.
+In the observed run, each access signature required email approval. Use an
+HTTPS resource so the result cannot be attributed to transport. Transaction
+Shield also flags the sign-in signature on HTTPS; see "Transaction Shield
+warning" below.
 
 ## Evidence
 
@@ -102,8 +102,13 @@ an origin must not itself grant approval, suppress MFA, or bypass message-risk
 evaluation. Waiting and non-waiting message-signing paths should preserve the
 same context.
 
-## Separate HTTP behavior
+## Transaction Shield warning
 
-This finding is independent of the malicious-signature warning observed for a
-private-LAN HTTP resource. HTTPS removes that transport-related warning; it does
-not add an origin field to the plugin signing request.
+Transaction Shield marks the plugin's SIWx sign-in signature as a malicious
+signature, and approving it requires the "I understand the risks and want to
+continue." checkbox. We first saw this against localhost and a private-LAN HTTP
+resource and attributed it to transport risk. On November 17, 2026, it appeared
+against a hosted HTTPS merchant resource on stock Agent Wallet 7.0.0 and 7.3.0,
+so HTTPS does not remove it. The signed message names the resource's domain,
+while the plugin's signature request carries the constant origin `metamask`.
+Whether forwarding the actual origin clears the warning has not been tested.
